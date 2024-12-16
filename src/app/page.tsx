@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocossd from '@tensorflow-models/coco-ssd';
 import { IoCameraReverseOutline } from 'react-icons/io5';
-import { ClipboardList, Settings, Camera, Play, Save } from 'lucide-react';
+import { ClipboardList, Camera, Play, Save } from 'lucide-react';
 
 type DetectedObject = {
   class: string;
