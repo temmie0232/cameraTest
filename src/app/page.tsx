@@ -126,23 +126,40 @@ const MobileObjectDetection: React.FC = () => {
 
   const captureImage = useCallback(async () => {
     if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
       if (context) {
-        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        // 一時的なキャンバスを作成
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempContext = tempCanvas.getContext('2d');
 
-        if (lastPredictions.length > 0) {
-          drawDetections(context, lastPredictions);
+        if (tempContext) {
+          // まず、ビデオフレームを一時的なキャンバスに描画
+          tempContext.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+
+          // メインのキャンバスをクリア
+          context.clearRect(0, 0, canvas.width, canvas.height);
+
+          // 一時的なキャンバスの内容をメインのキャンバスにコピー
+          context.drawImage(tempCanvas, 0, 0);
+
+          // バウンディングボックスを描画
+          if (lastPredictions.length > 0) {
+            drawDetections(context, lastPredictions);
+          }
+
+          const imageData = canvas.toDataURL('image/png');
+          setCapturedImage(imageData);
+          setIsPaused(true);
+
+          setDetectedObjects(lastPredictions.map(pred => ({
+            class: pred.class,
+            score: pred.score,
+            bbox: pred.bbox
+          })));
         }
-
-        const imageData = canvasRef.current.toDataURL('image/png');
-        setCapturedImage(imageData);
-        setIsPaused(true);
-
-        setDetectedObjects(lastPredictions.map(pred => ({
-          class: pred.class,
-          score: pred.score,
-          bbox: pred.bbox
-        })));
       }
     }
   }, [lastPredictions, drawDetections]);
