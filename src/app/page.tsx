@@ -67,7 +67,7 @@ const MobileObjectDetection = () => {
         try {
           await setupCamera(true);
           setIsFrontCamera(true);
-        } catch (_) {
+        } catch {
           setError('カメラの起動に失敗しました');
         }
       } else {
