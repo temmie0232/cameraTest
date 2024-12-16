@@ -24,6 +24,7 @@ const MobileObjectDetection: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [lastPredictions, setLastPredictions] = useState<cocossd.DetectedObject[]>([]);
+  const [scaleFactor, setScaleFactor] = useState({ x: 1, y: 1 });
 
   const setupCamera = useCallback(async (useFrontCamera = false) => {
     try {
@@ -44,19 +45,43 @@ const MobileObjectDetection: React.FC = () => {
         videoRef.current.srcObject = stream;
 
         videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
+          if (videoRef.current && canvasRef.current) {
             const videoWidth = videoRef.current.videoWidth;
             const videoHeight = videoRef.current.videoHeight;
 
-            setVideoSize({ width: videoWidth, height: videoHeight });
+            // コンテナのサイズを取得
+            const container = videoRef.current.parentElement;
+            if (container) {
+              const containerWidth = container.clientWidth;
+              const containerHeight = container.clientHeight;
 
-            if (canvasRef.current) {
+              // アスペクト比を維持しながら、コンテナにフィットするサイズを計算
+              const scale = Math.min(
+                containerWidth / videoWidth,
+                containerHeight / videoHeight
+              );
+
+              const scaledWidth = videoWidth * scale;
+              const scaledHeight = videoHeight * scale;
+
+              // スケーリング係数を更新
+              setScaleFactor({
+                x: scaledWidth / videoWidth,
+                y: scaledHeight / videoHeight
+              });
+
+              // ビデオサイズの状態を更新
+              setVideoSize({ width: videoWidth, height: videoHeight });
+
+              // ビデオとキャンバスのサイズを設定
+              videoRef.current.style.width = `${scaledWidth}px`;
+              videoRef.current.style.height = `${scaledHeight}px`;
+              canvasRef.current.style.width = `${scaledWidth}px`;
+              canvasRef.current.style.height = `${scaledHeight}px`;
+
+              // キャンバスの実際の解像度を設定
               canvasRef.current.width = videoWidth;
               canvasRef.current.height = videoHeight;
-            }
-            if (videoRef.current) {
-              videoRef.current.width = videoWidth;
-              videoRef.current.height = videoHeight;
             }
           }
         };
@@ -85,6 +110,8 @@ const MobileObjectDetection: React.FC = () => {
   }, [isFrontCamera, setupCamera]);
 
   const drawDetections = useCallback((ctx: CanvasRenderingContext2D, predictions: cocossd.DetectedObject[]) => {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
     predictions.forEach(prediction => {
       const [x, y, width, height] = prediction.bbox;
 
@@ -200,7 +227,6 @@ const MobileObjectDetection: React.FC = () => {
           const ctx = canvasRef.current?.getContext('2d');
           if (!ctx) return;
 
-          ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
           drawDetections(ctx, predictions);
 
           setDetectedObjects(predictions.map(pred => ({
@@ -243,31 +269,19 @@ const MobileObjectDetection: React.FC = () => {
       </div>
 
       <div className="absolute inset-0 flex items-center justify-center">
-        <div
-          className="relative rounded-lg overflow-hidden shadow-2xl"
-          style={{
-            width: videoSize.width,
-            height: videoSize.height
-          }}
-        >
+        <div className="relative rounded-lg overflow-hidden shadow-2xl w-full h-full max-w-3xl max-h-[80vh]">
           <video
             ref={videoRef}
             autoPlay
             playsInline
-            className="absolute inset-0"
+            className="absolute inset-0 object-contain"
             style={{
-              width: videoSize.width,
-              height: videoSize.height,
               display: isPaused ? 'none' : 'block'
             }}
           />
           <canvas
             ref={canvasRef}
-            className="absolute inset-0"
-            style={{
-              width: videoSize.width,
-              height: videoSize.height
-            }}
+            className="absolute inset-0 object-contain"
           />
         </div>
       </div>
