@@ -1,5 +1,5 @@
 "use client"
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocossd from '@tensorflow-models/coco-ssd';
 import { IoCameraReverseOutline } from 'react-icons/io5';
@@ -32,7 +32,7 @@ const MobileObjectDetection = () => {
     initTF();
   }, []);
 
-  const setupCamera = async (useFrontCamera = false) => {
+  const setupCamera = useCallback(async (useFrontCamera = false) => {
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -67,14 +67,14 @@ const MobileObjectDetection = () => {
         try {
           await setupCamera(true);
           setIsFrontCamera(true);
-        } catch (frontErr) {
+        } catch (_) {
           setError('カメラの起動に失敗しました');
         }
       } else {
         setError('カメラの起動に失敗しました');
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     setupCamera(false);
@@ -84,12 +84,12 @@ const MobileObjectDetection = () => {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [setupCamera]);
 
-  const toggleCamera = async () => {
+  const toggleCamera = useCallback(async () => {
     setIsFrontCamera(!isFrontCamera);
     await setupCamera(!isFrontCamera);
-  };
+  }, [isFrontCamera, setupCamera]);
 
   useEffect(() => {
     if (!model || !videoRef.current || !canvasRef.current) return;
@@ -153,7 +153,6 @@ const MobileObjectDetection = () => {
           className="absolute inset-0 w-full h-full object-cover"
         />
 
-        {/* カメラ切り替えボタン */}
         <button
           onClick={toggleCamera}
           className="absolute top-4 right-4 z-10 p-3 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition-all"
