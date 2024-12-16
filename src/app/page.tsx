@@ -19,12 +19,10 @@ const MobileObjectDetection: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isFrontCamera, setIsFrontCamera] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
-  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [lastPredictions, setLastPredictions] = useState<cocossd.DetectedObject[]>([]);
-  const [scaleFactor, setScaleFactor] = useState({ x: 1, y: 1 });
 
   const setupCamera = useCallback(async (useFrontCamera = false) => {
     try {
@@ -41,7 +39,7 @@ const MobileObjectDetection: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      if (videoRef.current) {
+      if (videoRef.current && canvasRef.current) {
         videoRef.current.srcObject = stream;
 
         videoRef.current.onloadedmetadata = () => {
@@ -63,15 +61,6 @@ const MobileObjectDetection: React.FC = () => {
 
               const scaledWidth = videoWidth * scale;
               const scaledHeight = videoHeight * scale;
-
-              // スケーリング係数を更新
-              setScaleFactor({
-                x: scaledWidth / videoWidth,
-                y: scaledHeight / videoHeight
-              });
-
-              // ビデオサイズの状態を更新
-              setVideoSize({ width: videoWidth, height: videoHeight });
 
               // ビデオとキャンバスのサイズを設定
               videoRef.current.style.width = `${scaledWidth}px`;
