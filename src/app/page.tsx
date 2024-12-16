@@ -3,8 +3,15 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocossd from '@tensorflow-models/coco-ssd';
 import { IoCameraReverseOutline } from 'react-icons/io5';
+import { ClipboardList, Settings, Camera, Play, Save } from 'lucide-react';
 
-const MobileObjectDetection = () => {
+type DetectedObject = {
+  class: string;
+  score: number;
+  bbox?: [number, number, number, number];
+};
+
+const MobileObjectDetection: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [model, setModel] = useState<cocossd.ObjectDetection | null>(null);
@@ -12,25 +19,11 @@ const MobileObjectDetection = () => {
   const [error, setError] = useState<string | null>(null);
   const [isFrontCamera, setIsFrontCamera] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
-
-  useEffect(() => {
-    const initTF = async () => {
-      try {
-        await tf.ready();
-        const loadedModel = await cocossd.load({
-          base: 'lite_mobilenet_v2'
-        });
-        setModel(loadedModel);
-        setIsLoading(false);
-      } catch (err) {
-        console.error('初期化エラー:', err);
-        setError(err instanceof Error ? err.message : '不明なエラーが発生しました');
-        setIsLoading(false);
-      }
-    };
-
-    initTF();
-  }, []);
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
+  const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
+  const [isPaused, setIsPaused] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [lastPredictions, setLastPredictions] = useState<cocossd.DetectedObject[]>([]);
 
   const setupCamera = useCallback(async (useFrontCamera = false) => {
     try {
@@ -40,9 +33,7 @@ const MobileObjectDetection = () => {
 
       const constraints = {
         video: {
-          facingMode: useFrontCamera ? "user" : { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          facingMode: useFrontCamera ? "user" : { ideal: "environment" }
         }
       };
 
@@ -53,9 +44,20 @@ const MobileObjectDetection = () => {
         videoRef.current.srcObject = stream;
 
         videoRef.current.onloadedmetadata = () => {
-          if (canvasRef.current && videoRef.current) {
-            canvasRef.current.width = videoRef.current.videoWidth;
-            canvasRef.current.height = videoRef.current.videoHeight;
+          if (videoRef.current) {
+            const videoWidth = videoRef.current.videoWidth;
+            const videoHeight = videoRef.current.videoHeight;
+
+            setVideoSize({ width: videoWidth, height: videoHeight });
+
+            if (canvasRef.current) {
+              canvasRef.current.width = videoWidth;
+              canvasRef.current.height = videoHeight;
+            }
+            if (videoRef.current) {
+              videoRef.current.width = videoWidth;
+              videoRef.current.height = videoHeight;
+            }
           }
         };
       }
@@ -76,6 +78,86 @@ const MobileObjectDetection = () => {
     }
   }, []);
 
+  const handleToggleCamera = useCallback(async () => {
+    const newIsFrontCamera = !isFrontCamera;
+    setIsFrontCamera(newIsFrontCamera);
+    await setupCamera(newIsFrontCamera);
+  }, [isFrontCamera, setupCamera]);
+
+  const drawDetections = useCallback((ctx: CanvasRenderingContext2D, predictions: cocossd.DetectedObject[]) => {
+    predictions.forEach(prediction => {
+      const [x, y, width, height] = prediction.bbox;
+
+      // 緑色のバウンディングボックス
+      ctx.strokeStyle = '#00FF00';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, width, height);
+
+      // 半透明の黒背景（ラベル用）
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(x, y - 25, width, 25);
+
+      // 白色のテキスト
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '16px "Roboto Mono", monospace';
+      ctx.fillText(
+        `${prediction.class} ${Math.round(prediction.score * 100)}%`,
+        x + 5,
+        y - 7
+      );
+    });
+  }, []);
+
+  const captureImage = useCallback(async () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      if (context) {
+        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+
+        if (lastPredictions.length > 0) {
+          drawDetections(context, lastPredictions);
+        }
+
+        const imageData = canvasRef.current.toDataURL('image/png');
+        setCapturedImage(imageData);
+        setIsPaused(true);
+
+        setDetectedObjects(lastPredictions.map(pred => ({
+          class: pred.class,
+          score: pred.score,
+          bbox: pred.bbox
+        })));
+      }
+    }
+  }, [lastPredictions, drawDetections]);
+
+  const resumeCamera = useCallback(() => {
+    setIsPaused(false);
+    setCapturedImage(null);
+  }, []);
+
+  const saveImage = useCallback(() => {
+    if (capturedImage) {
+      const link = document.createElement('a');
+      link.href = capturedImage;
+      link.download = `object-detection-${Date.now()}.png`;
+      link.click();
+
+      const detectionData = {
+        timestamp: new Date().toISOString(),
+        detections: detectedObjects
+      };
+      const dataStr = JSON.stringify(detectionData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const dataUrl = URL.createObjectURL(dataBlob);
+      const dataLink = document.createElement('a');
+      dataLink.href = dataUrl;
+      dataLink.download = `object-detection-${Date.now()}.json`;
+      dataLink.click();
+      URL.revokeObjectURL(dataUrl);
+    }
+  }, [capturedImage, detectedObjects]);
+
   useEffect(() => {
     setupCamera(false);
 
@@ -86,43 +168,46 @@ const MobileObjectDetection = () => {
     };
   }, [setupCamera]);
 
-  const toggleCamera = useCallback(async () => {
-    setIsFrontCamera(!isFrontCamera);
-    await setupCamera(!isFrontCamera);
-  }, [isFrontCamera, setupCamera]);
+  useEffect(() => {
+    const initTF = async () => {
+      try {
+        await tf.ready();
+        const loadedModel = await cocossd.load({
+          base: 'lite_mobilenet_v2'
+        });
+        setModel(loadedModel);
+        setIsLoading(false);
+      } catch (err) {
+        console.error('初期化エラー:', err);
+        setError(err instanceof Error ? err.message : '不明なエラーが発生しました');
+        setIsLoading(false);
+      }
+    };
+
+    initTF();
+  }, []);
 
   useEffect(() => {
-    if (!model || !videoRef.current || !canvasRef.current) return;
+    if (!model || !videoRef.current || !canvasRef.current || isPaused) return;
 
     let animationId: number;
     const detectObjects = async () => {
       try {
         if (videoRef.current?.readyState === 4) {
           const predictions = await model.detect(videoRef.current);
+          setLastPredictions(predictions);
 
           const ctx = canvasRef.current?.getContext('2d');
           if (!ctx) return;
 
           ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+          drawDetections(ctx, predictions);
 
-          predictions.forEach(prediction => {
-            const [x, y, width, height] = prediction.bbox;
-
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, width, height);
-
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-            ctx.fillRect(x, y - 30, width, 30);
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 20px Arial';
-            ctx.fillText(
-              `${prediction.class} ${Math.round(prediction.score * 100)}%`,
-              x + 5,
-              y - 8
-            );
-          });
+          setDetectedObjects(predictions.map(pred => ({
+            class: pred.class,
+            score: pred.score,
+            bbox: pred.bbox
+          })));
         }
 
         animationId = requestAnimationFrame(detectObjects);
@@ -139,47 +224,125 @@ const MobileObjectDetection = () => {
         cancelAnimationFrame(animationId);
       }
     };
-  }, [model]);
+  }, [model, isPaused, drawDetections]);
 
   return (
-    <div className="fixed inset-0 bg-black">
-      <div className="relative w-full h-full">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-
+    <div className="fixed inset-0 bg-gradient-to-b from-gray-900 to-black" style={{ fontFamily: '"Roboto Mono", monospace' }}>
+      <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-black/80 to-transparent z-10 flex items-center justify-between px-4">
+        <div className="flex items-center space-x-2 text-white/80">
+          <Camera className="w-6 h-6" />
+          <span className="font-medium">物体検出 (COCO-SSD)</span>
+        </div>
         <button
-          onClick={toggleCamera}
-          className="absolute top-4 right-4 z-10 p-3 bg-black bg-opacity-50 rounded-full hover:bg-opacity-70 transition-all"
+          onClick={handleToggleCamera}
+          className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+          disabled={isPaused}
         >
           <IoCameraReverseOutline className="w-6 h-6 text-white" />
         </button>
-
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="text-center text-white">
-              <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p>読み込み中...</p>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="bg-red-500 text-white p-4 rounded-lg mx-4 text-center">
-              <p>エラーが発生しました</p>
-              <p className="text-sm mt-2">{error}</p>
-            </div>
-          </div>
-        )}
       </div>
+
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          className="relative rounded-lg overflow-hidden shadow-2xl"
+          style={{
+            width: videoSize.width,
+            height: videoSize.height
+          }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="absolute inset-0"
+            style={{
+              width: videoSize.width,
+              height: videoSize.height,
+              display: isPaused ? 'none' : 'block'
+            }}
+          />
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0"
+            style={{
+              width: videoSize.width,
+              height: videoSize.height
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+        <div className="max-w-md mx-auto">
+          <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 mb-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <ClipboardList className="w-5 h-5 text-white" />
+              <span className="text-white/90 text-sm font-medium">検出オブジェクト</span>
+            </div>
+            <div className="space-y-1">
+              {detectedObjects.map((obj, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between text-sm px-2 py-1 rounded bg-white/5"
+                >
+                  <span className="text-white/80">{obj.class}</span>
+                  <span className="text-white">{Math.round(obj.score * 100)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-center items-center space-x-4">
+            {!isPaused ? (
+              <button
+                onClick={captureImage}
+                className="w-16 h-16 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all"
+              >
+                <Camera className="w-8 h-8 text-white" />
+              </button>
+            ) : (
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={resumeCamera}
+                  className="w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all"
+                >
+                  <Play className="w-6 h-6 text-white" />
+                </button>
+                <button
+                  className="w-16 h-16 rounded-full bg-gray-500/50 flex items-center justify-center cursor-not-allowed"
+                  disabled
+                >
+                  <Camera className="w-8 h-8 text-gray-400" />
+                </button>
+                <button
+                  onClick={saveImage}
+                  className="w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all"
+                >
+                  <Save className="w-6 h-6 text-white" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="text-center text-white">
+            <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="font-medium">読み込み中...</p>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-gray-900/90 backdrop-blur-md text-white p-4 rounded-lg mx-4 text-center">
+            <p className="font-medium">エラーが発生しました</p>
+            <p className="text-sm mt-2 text-white/80">{error}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
