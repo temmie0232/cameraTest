@@ -5,13 +5,13 @@ import * as cocossd from '@tensorflow-models/coco-ssd';
 import { IoCameraReverseOutline } from 'react-icons/io5';
 
 const MobileObjectDetection = () => {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [model, setModel] = useState(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [model, setModel] = useState<cocossd.ObjectDetection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [isFrontCamera, setIsFrontCamera] = useState(false);
-  const streamRef = useRef(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     const initTF = async () => {
@@ -24,7 +24,7 @@ const MobileObjectDetection = () => {
         setIsLoading(false);
       } catch (err) {
         console.error('初期化エラー:', err);
-        setError(err.message);
+        setError(err instanceof Error ? err.message : '不明なエラーが発生しました');
         setIsLoading(false);
       }
     };
@@ -53,7 +53,7 @@ const MobileObjectDetection = () => {
         videoRef.current.srcObject = stream;
 
         videoRef.current.onloadedmetadata = () => {
-          if (canvasRef.current) {
+          if (canvasRef.current && videoRef.current) {
             canvasRef.current.width = videoRef.current.videoWidth;
             canvasRef.current.height = videoRef.current.videoHeight;
           }
@@ -94,13 +94,15 @@ const MobileObjectDetection = () => {
   useEffect(() => {
     if (!model || !videoRef.current || !canvasRef.current) return;
 
-    let animationId;
+    let animationId: number;
     const detectObjects = async () => {
       try {
-        if (videoRef.current.readyState === 4) {
+        if (videoRef.current?.readyState === 4) {
           const predictions = await model.detect(videoRef.current);
 
-          const ctx = canvasRef.current.getContext('2d');
+          const ctx = canvasRef.current?.getContext('2d');
+          if (!ctx) return;
+
           ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
           predictions.forEach(prediction => {
